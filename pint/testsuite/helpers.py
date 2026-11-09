@@ -1,110 +1,82 @@
-# -*- coding: utf-8 -*-
+from __future__ import annotations
 
-from __future__ import division, unicode_literals, print_function, absolute_import
-
-
+import contextlib
 import doctest
-from distutils.version import StrictVersion
+import pickle
 import re
-import unittest
 
-from pint.compat import HAS_NUMPY, HAS_PROPER_BABEL, HAS_UNCERTAINTIES, NUMPY_VER, PYTHON3
+import pytest
+from packaging.version import parse as version_parse
 
+from pint.testing import assert_allclose as assert_quantity_almost_equal  # noqa: F401
+from pint.testing import assert_equal as assert_quantity_equal  # noqa: F401
 
-def requires_numpy18():
-    if not HAS_NUMPY:
-        return unittest.skip('Requires NumPy')
-    return unittest.skipUnless(StrictVersion(NUMPY_VER) >= StrictVersion('1.8'), 'Requires NumPy >= 1.8')
+from ..compat import (
+    HAS_BABEL,
+    HAS_NUMPY,
+    HAS_SCIPY,
+    HAS_UNCERTAINTIES,
+    NUMPY_VER,
+)
 
+_number_re = r"([-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)"
+_q_re = re.compile(
+    r"Quantity\("
+    + r"\s*"
+    + r"(?P<magnitude>%s)" % _number_re
+    + r"\s*,\s*"
+    + r"\"(?P<unit>.*)\""
+    + r"\s*"
+    + r"\)"
+)
 
-def requires_numpy_previous_than(version):
-    if not HAS_NUMPY:
-        return unittest.skip('Requires NumPy')
-    return unittest.skipUnless(StrictVersion(NUMPY_VER) < StrictVersion(version), 'Requires NumPy < %s' % version)
+_sq_re = re.compile(
+    r"\s*" + r"(?P<magnitude>%s)" % _number_re + r"\s" + r"(?P<unit>.*)"
+)
 
-
-def requires_numpy():
-    return unittest.skipUnless(HAS_NUMPY, 'Requires NumPy')
-
-
-def requires_not_numpy():
-    return unittest.skipIf(HAS_NUMPY, 'Requires NumPy is not installed.')
-
-
-def requires_proper_babel():
-    return unittest.skipUnless(HAS_PROPER_BABEL, 'Requires Babel with units support')
-
-
-def requires_uncertainties():
-    return unittest.skipUnless(HAS_UNCERTAINTIES, 'Requires Uncertainties')
-
-
-def requires_not_uncertainties():
-    return unittest.skipIf(HAS_UNCERTAINTIES, 'Requires Uncertainties is not installed.')
+_unit_re = re.compile(r"<Unit\((.*)\)>")
 
 
-def requires_python2():
-    return unittest.skipIf(PYTHON3, 'Requires Python 2.X.')
-
-
-def requires_python3():
-    return unittest.skipUnless(PYTHON3, 'Requires Python 3.X.')
-
-
-_number_re = '([-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)'
-_q_re = re.compile('<Quantity\(' + '\s*' + '(?P<magnitude>%s)' % _number_re +
-                   '\s*,\s*' + "'(?P<unit>.*)'" + '\s*' + '\)>')
-
-_sq_re = re.compile('\s*' + '(?P<magnitude>%s)' % _number_re +
-                    '\s' + "(?P<unit>.*)")
-
-_unit_re = re.compile('<Unit\((.*)\)>')
+def internal(ureg):
+    return ureg
 
 
 class PintOutputChecker(doctest.OutputChecker):
-
     def check_output(self, want, got, optionflags):
-        check = super(PintOutputChecker, self).check_output(want, got, optionflags)
+        check = super().check_output(want, got, optionflags)
         if check:
             return check
 
-        try:
+        with contextlib.suppress(Exception):
             if eval(want) == eval(got):
                 return True
-        except:
-            pass
 
         for regex in (_q_re, _sq_re):
-            try:
-                parsed_got = regex.match(got.replace(r'\\', '')).groupdict()
-                parsed_want = regex.match(want.replace(r'\\', '')).groupdict()
+            with contextlib.suppress(Exception):
+                parsed_got = regex.match(got.replace(r"\\", "")).groupdict()
+                parsed_want = regex.match(want.replace(r"\\", "")).groupdict()
 
-                v1 = float(parsed_got['magnitude'])
-                v2 = float(parsed_want['magnitude'])
+                v1 = float(parsed_got["magnitude"])
+                v2 = float(parsed_want["magnitude"])
 
                 if abs(v1 - v2) > abs(v1) / 1000:
                     return False
 
-                if parsed_got['unit'] != parsed_want['unit']:
+                if parsed_got["unit"] != parsed_want["unit"]:
                     return False
 
                 return True
-            except:
-                pass
 
         cnt = 0
-        for regex in (_unit_re, ):
-            try:
-                parsed_got, tmp = regex.subn('\1', got)
+        for regex in (_unit_re,):
+            with contextlib.suppress(Exception):
+                parsed_got, tmp = regex.subn("\1", got)
                 cnt += tmp
-                parsed_want, temp = regex.subn('\1', want)
+                parsed_want, temp = regex.subn("\1", want)
                 cnt += tmp
 
                 if parsed_got == parsed_want:
                     return True
-
-            except:
-                pass
 
         if cnt:
             # If there was any replacement, we try again the previous methods.
@@ -112,3 +84,66 @@ class PintOutputChecker(doctest.OutputChecker):
 
         return False
 
+
+requires_numpy = pytest.mark.skipif(not HAS_NUMPY, reason="Requires NumPy")
+requires_not_numpy = pytest.mark.skipif(
+    HAS_NUMPY, reason="Requires NumPy not to be installed."
+)
+
+
+def requires_numpy_previous_than(version):
+    if not HAS_NUMPY:
+        return pytest.mark.skip("Requires NumPy")
+    return pytest.mark.skipif(
+        not version_parse(NUMPY_VER) < version_parse(version),
+        reason="Requires NumPy < %s" % version,
+    )
+
+
+def requires_numpy_at_least(version):
+    if not HAS_NUMPY:
+        return pytest.mark.skip("Requires NumPy")
+    return pytest.mark.skipif(
+        not version_parse(NUMPY_VER) >= version_parse(version),
+        reason="Requires NumPy >= %s" % version,
+    )
+
+
+def requires_babel(tested_locales=[]):
+    if not HAS_BABEL:
+        return pytest.mark.skip("Requires Babel with units support")
+
+    import locale
+
+    default_locale = locale.getlocale(locale.LC_NUMERIC)
+    locales_unavailable = False
+    try:
+        for loc in tested_locales:
+            locale.setlocale(locale.LC_NUMERIC, loc)
+    except locale.Error:
+        locales_unavailable = True
+    locale.setlocale(locale.LC_NUMERIC, default_locale)
+
+    return pytest.mark.skipif(
+        locales_unavailable, reason="Tested locales not available."
+    )
+
+
+requires_not_babel = pytest.mark.skipif(
+    HAS_BABEL, reason="Requires Babel not to be installed"
+)
+requires_uncertainties = pytest.mark.skipif(
+    not HAS_UNCERTAINTIES, reason="Requires Uncertainties"
+)
+requires_not_uncertainties = pytest.mark.skipif(
+    HAS_UNCERTAINTIES, reason="Requires Uncertainties not to be installed."
+)
+requires_scipy = pytest.mark.skipif(not HAS_SCIPY, reason="Requires scipy")
+
+# Parametrization
+
+allprotos = pytest.mark.parametrize(
+    ("protocol",), [(p,) for p in range(pickle.HIGHEST_PROTOCOL + 1)]
+)
+
+check_all_bool = pytest.mark.parametrize("check_all", [False, True])

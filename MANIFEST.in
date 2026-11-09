@@ -1,7 +1,9 @@
-include README AUTHORS CHANGES LICENSE CHANGES_DEV README.rst BADGES.rst
+include AUTHORS CHANGES LICENSE README.rst BADGES.rst version.txt .coveragerc .readthedocs.yaml .pre-commit-config.yaml
 recursive-include pint *
 recursive-include docs *
-recursive-include bench *
+recursive-include benchmarks *
 prune docs/_build
 prune docs/_themes/.git
-global-exclude *.pyc *~ .DS_Store *__pycache__* *.pyo .travis-exclude.yml
+prune pint/.pytest_cache
+exclude .editorconfig bors.toml pull_request_template.md version.py
+global-exclude *.pyc *~ .DS_Store *__pycache__* *.pyo .travis-exclude.yml *.lock
